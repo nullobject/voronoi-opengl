@@ -51,6 +51,9 @@ static Vector4 seed_colors[SEEDS_COUNT];
 static Vector2 seed_velocities[SEEDS_COUNT];
 static GLuint vao;
 static GLuint vbos[COUNT_ATTRIBS];
+static int frame_width = DEFAULT_SCREEN_WIDTH;
+static int frame_height= DEFAULT_SCREEN_HEIGHT;
+static uint32_t *frame_pixels;
 
 void MessageCallback(GLenum source,
                      GLenum type,
@@ -236,13 +239,13 @@ void render_frame(double delta_time)
 
     for (size_t i = 0; i < SEEDS_COUNT; ++i) {
         float x = seed_positions[i].x + seed_velocities[i].x*delta_time;
-        if (0 <= x && x <= DEFAULT_SCREEN_WIDTH) {
+        if (0 <= x && x <= frame_width) {
             seed_positions[i].x = x;
         } else {
             seed_velocities[i].x *= -1;
         }
         float y = seed_positions[i].y + seed_velocities[i].y*delta_time;
-        if (0 <= y && y <= DEFAULT_SCREEN_HEIGHT) {
+        if (0 <= y && y <= frame_height {
             seed_positions[i].y = y;
         } else {
             seed_velocities[i].y *= -1;
@@ -263,7 +266,6 @@ void render_video_mode(GLFWwindow *window)
         exit(1);
     }
 
-    static uint32_t frame_pixels[DEFAULT_SCREEN_HEIGHT][DEFAULT_SCREEN_WIDTH];
     static char file_path[1024];
 
     size_t fps = 60;
@@ -272,18 +274,21 @@ void render_video_mode(GLFWwindow *window)
     size_t frames_count = floorf(duration/delta_time);
 
     for (size_t i = 0; i < frames_count && !glfwWindowShouldClose(window); ++i) {
+        // Poll events first to handle framebuffer resizing
+        glfwPollEvents();
+
         render_frame(delta_time);
 
         glReadPixels(0,
                      0,
-                     DEFAULT_SCREEN_WIDTH,
-                     DEFAULT_SCREEN_HEIGHT,
+                     frame_width,
+                     frame_height
                      GL_RGBA,
                      GL_UNSIGNED_BYTE,
                      frame_pixels);
 
         snprintf(file_path, sizeof(file_path), "%s/frame-%03zu.png", output_dir, i);
-        if (!stbi_write_png(file_path, DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT, 4, frame_pixels, sizeof(uint32_t)*DEFAULT_SCREEN_WIDTH)) {
+        if (!stbi_write_png(file_path, frame_width, frame_height 4, frame_pixels, sizeof(uint32_t)*frame_width)) {
             fprintf(stderr, "ERROR: could not save file %s\n", file_path);
             exit(1);
         }
@@ -291,7 +296,6 @@ void render_video_mode(GLFWwindow *window)
         printf("INFO: Rendered %zu/%zu frames\n", i + 1, frames_count);
 
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 }
 
@@ -301,10 +305,12 @@ void interactive_mode(GLFWwindow *window)
     double delta_time = 0.0f;
 
     while (!glfwWindowShouldClose(window)) {
+        // Poll events first to handle framebuffer resizing
+        glfwPollEvents();
+
         render_frame(delta_time);
 
         glfwSwapBuffers(window);
-        glfwPollEvents();
 
         double cur_time = glfwGetTime();
         delta_time = cur_time - prev_time;
@@ -316,6 +322,14 @@ typedef enum {
     MODE_INTERACTIVE,
     MODE_RENDER_VIDEO,
 } Mode;
+
+void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
+    (void)window;
+    glViewport(0, 0, width, height);
+    frame_pixels = realloc(frame_pixels, sizeof(uint32_t)*width*height);
+    frame_width = width;
+    frame_height= height;
+}
 
 int main(int argc, char **argv)
 {
@@ -353,6 +367,10 @@ int main(int argc, char **argv)
         glfwTerminate();
         exit(1);
     }
+
+    frame_pixels = malloc(sizeof(uint32_t)*DEFAULT_SCREEN_WIDTH*DEFAULT_SCREEN_HEIGHT);
+
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     int gl_ver_major = glfwGetWindowAttrib(window, GLFW_CONTEXT_VERSION_MAJOR);
     int gl_ver_minor = glfwGetWindowAttrib(window, GLFW_CONTEXT_VERSION_MINOR);
@@ -417,7 +435,6 @@ int main(int argc, char **argv)
     }
     glUseProgram(program);
 
-    // TODO: resize the canvas when the window is resized
     GLint u_resolution = glGetUniformLocation(program, "resolution");
     glUniform2f(u_resolution, DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT);
 
@@ -431,6 +448,8 @@ int main(int argc, char **argv)
     default:
         UNREACHABLE("Unexpected execution mode");
     }
+
+    free(frame_pixels);
 
     return 0;
 }
