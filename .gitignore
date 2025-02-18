@@ -1,1 +1,4 @@
 *.ppm
+frames
+voronoi-opengl
+voronoi-ppm
